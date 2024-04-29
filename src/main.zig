@@ -1,6 +1,10 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
+const WIDTH: usize = 640;
+const HEIGHT: usize = 480;
+const CHANNELS: usize = 3;
+const stdout = std.io.getStdOut();
 const Point = struct {
     x: i32,
     y: i32,
@@ -44,11 +48,44 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
     const start = Point{ .x = 0, .y = 0 };
-    const end = Point{ .x = 5, .y = 3 };
+    const end = Point{ .x = WIDTH, .y = HEIGHT };
+
     const points = try BresenhamLine(start, end, allocator);
     defer points.deinit();
+
     for (points.items) |point| {
         std.debug.print("{}\n", .{point});
+    }
+    const write = stdout.writer();
+    const size = CHANNELS * WIDTH * HEIGHT;
+    var buffer = try allocator.alloc(u8, size);
+    defer allocator.free(buffer);
+    try write.print("P3\n{} {}\n255\n", .{ WIDTH, HEIGHT });
+    var index: usize = 0;
+    for (0..HEIGHT) |i| {
+        for (0..WIDTH) |j| {
+            index = (i * WIDTH + j) * CHANNELS;
+            buffer[index] = 255;
+            buffer[index + 1] = 255;
+            buffer[index + 2] = 255;
+            //try write.print("{} {} {}\n", .{ buffer[index], buffer[index + 1], buffer[index + 2] });
+        }
+    }
+
+    index = 0;
+    for (points.items) |point| {
+        index = (point.y * WIDTH + point.x) * CHANNELS;
+        buffer[index] = 255;
+        buffer[index + 1] = 255;
+        buffer[index + 2] = 255;
+    }
+
+    for (0..HEIGHT) |i| {
+        for (0..WIDTH) |j| {
+            index = (i * WIDTH + j) * CHANNELS;
+            try write.print("{} {} {}\n", .{ buffer[index], buffer[index + 1], buffer[index + 2] });
+        }
     }
 }
