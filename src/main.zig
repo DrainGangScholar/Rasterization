@@ -10,15 +10,33 @@ const math = std.math;
 
 const Matrix = struct {
     buffer: [3][3]f64,
-    //    pub fn mul(mat1:*const Matrix, mat2:*const Matrix) Matrix{
-    //    }
+    pub fn mul(self: Matrix, other: Matrix) Matrix {
+        var buffer: [3][3]f64 = undefined;
+        for (0..3) |i| {
+            for (0..3) |j| {
+                buffer[i][j] += self.buffer[i][j] * other.buffer[j][i];
+            }
+        }
+        return Matrix{
+            .buffer = buffer,
+        };
+    }
 };
 pub fn translate(dx: f64, dy: f64) Matrix {
     return Matrix{
         .buffer = .{
             .{ 1, 0.0, 0.0 },
-            .{ 1.0, 1.0, 0.0 },
+            .{ 0.0, 1.0, 0.0 },
             .{ dx, dy, 1.0 },
+        },
+    };
+}
+pub fn scale(dx: f64, dy: f64) Matrix {
+    return Matrix{
+        .buffer = .{
+            .{ dx, 0.0, 0.0 },
+            .{ 0.0, dy, 0.0 },
+            .{ 0.0, 0.0, 1.0 },
         },
     };
 }
@@ -45,22 +63,22 @@ const Point = struct {
         return @intCast(self.y);
     }
     pub fn x_float(self: *const Point) f64 {
-        return @floatCast(self.x);
+        return @floatFromInt(self.x);
     }
     pub fn y_float(self: *const Point) f64 {
-        return @floatCast(self.y);
+        return @floatFromInt(self.y);
     }
     pub fn w_float(self: *const Point) f64 {
-        return @floatCast(self.w);
+        return @floatFromInt(self.w);
     }
-    pub fn mul(self: *const Point, mat: Matrix) !Point {
+    pub fn mul(self: *const Point, mat: Matrix) Point {
         const x = self.x_float() * mat.buffer[0][0] + self.y_float() * mat.buffer[1][0] + self.w_float() * mat.buffer[2][0];
         const y = self.x_float() * mat.buffer[0][1] + self.y_float() * mat.buffer[1][1] + self.w_float() * mat.buffer[2][1];
         const w = self.x_float() * mat.buffer[0][2] + self.y_float() * mat.buffer[1][2] + self.w_float() * mat.buffer[2][2];
         return Point{
-            .x = @intCast(x / w),
-            .y = @intCast(y / w),
-            .w = @intCast(1),
+            .x = @intFromFloat(x / w),
+            .y = @intFromFloat(y / w),
+            .w = 1,
         };
     }
 };
@@ -137,7 +155,7 @@ pub fn rasterize(start: Point, end: Point, buffer: []u8, allocator: Allocator) !
     defer points.deinit();
     var index: usize = 0;
     for (points.items) |point| {
-        index = (point.y_usize() * WIDTH + point.x_usize()) * CHANNELS;
+        index = (@abs(point.y) * WIDTH + @abs(point.x)) * CHANNELS;
         buffer[index] = 0;
         buffer[index + 1] = 128;
         buffer[index + 2] = 255;
@@ -156,21 +174,24 @@ pub fn main() !void {
     const start = Point{ .x = 0, .y = 0, .w = 1 };
     const end = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
 
-    const start1 = Point{ .x = 0, .y = HEIGHT - 1, .w = 1 };
-    const end1 = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
+    //    const start1 = Point{ .x = 0, .y = HEIGHT - 1, .w = 1 };
+    //    const end1 = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
+    //
+    //    const start2 = Point{ .x = 0, .y = 0, .w = 1 };
+    //    const end2 = Point{ .x = 0, .y = HEIGHT - 1, .w = 1 };
+    //
+    //    const start3 = Point{ .x = 0, .y = HEIGHT / 2 - 1, .w = 1 };
+    //    const end3 = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
 
-    const start2 = Point{ .x = 0, .y = 0, .w = 1 };
-    const end2 = Point{ .x = 0, .y = HEIGHT - 1, .w = 1 };
+    //    const t = translate((WIDTH / 2 - 1), 0.0);
+    //const r = rotate(45.0);
+    const s = scale(-1.0, 1.0);
+    const tr = s;
 
-    const start3 = Point{ .x = 0, .y = HEIGHT / 2 - 1, .w = 1 };
-    const end3 = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
-
-    const t = translate((WIDTH / 2 - 1), 0.0);
-
-    try rasterize(start.mul(t), end.mul(t), buffer, allocator);
-    try rasterize(start1, end1, buffer, allocator);
-    try rasterize(start2, end2, buffer, allocator);
-    try rasterize(start3, end3, buffer, allocator);
+    try rasterize(start.mul(tr), end.mul(tr), buffer, allocator);
+    //    try rasterize(start1.mul(tr), end1.mul(tr), buffer, allocator);
+    //    try rasterize(start2.mul(tr), end2.mul(tr), buffer, allocator);
+    //    try rasterize(start3.mul(tr), end3.mul(tr), buffer, allocator);
 
     try write_to_ppm(buffer);
 }
