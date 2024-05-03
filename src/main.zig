@@ -4,9 +4,16 @@ const Allocator = std.mem.Allocator;
 const WIDTH: usize = 640;
 const HEIGHT: usize = 480;
 const CHANNELS: usize = 3;
+const size = CHANNELS * WIDTH * HEIGHT;
 const stdout = std.io.getStdOut();
 const write = stdout.writer();
 const math = std.math;
+const PI = std.math.pi;
+const PI_OVER_180 = PI / 180.0;
+
+inline fn to_rad(angle: f64) f64 {
+    return angle * PI_OVER_180;
+}
 
 const Matrix = struct {
     buffer: [3][3]f64,
@@ -14,7 +21,9 @@ const Matrix = struct {
         var buffer: [3][3]f64 = undefined;
         for (0..3) |i| {
             for (0..3) |j| {
-                buffer[i][j] += self.buffer[i][j] * other.buffer[j][i];
+                for (0..3) |k| {
+                    buffer[i][j] += self.buffer[i][k] * other.buffer[k][j];
+                }
             }
         }
         return Matrix{
@@ -154,8 +163,12 @@ pub fn rasterize(start: Point, end: Point, buffer: []u8, allocator: Allocator) !
     const points = try BresenhamLine(start, end, allocator);
     defer points.deinit();
     var index: usize = 0;
+    var x: usize = 0;
+    var y: usize = 0;
     for (points.items) |point| {
-        index = (@abs(point.y) * WIDTH + @abs(point.x)) * CHANNELS;
+        x = if (point.x < 0) 0 else if (point.x >= WIDTH) WIDTH - 1 else @intCast(point.x);
+        y = if (point.y < 0) 0 else if (point.y >= HEIGHT) HEIGHT - 1 else @intCast(point.y);
+        index = (y * WIDTH + x) * CHANNELS;
         buffer[index] = 0;
         buffer[index + 1] = 128;
         buffer[index + 2] = 255;
@@ -166,32 +179,43 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const size = CHANNELS * WIDTH * HEIGHT;
     const buffer = try allocator.alloc(u8, size);
     defer allocator.free(buffer);
 
     try init_buffer(buffer);
-    const start = Point{ .x = 0, .y = 0, .w = 1 };
-    const end = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
+    const side_length = 60;
 
-    //    const start1 = Point{ .x = 0, .y = HEIGHT - 1, .w = 1 };
-    //    const end1 = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
-    //
-    //    const start2 = Point{ .x = 0, .y = 0, .w = 1 };
-    //    const end2 = Point{ .x = 0, .y = HEIGHT - 1, .w = 1 };
-    //
-    //    const start3 = Point{ .x = 0, .y = HEIGHT / 2 - 1, .w = 1 };
-    //    const end3 = Point{ .x = WIDTH / 2 - 1, .y = HEIGHT / 2 - 1, .w = 1 };
+    const center_x: i64 = @intCast(WIDTH / 2);
+    const center_y: i64 = @intCast(HEIGHT / 2);
 
-    //    const t = translate((WIDTH / 2 - 1), 0.0);
-    //const r = rotate(45.0);
-    const s = scale(-1.0, 1.0);
-    const tr = s;
+    const half_height: i64 = @intFromFloat(side_length * math.sqrt(3.0) / 2.0);
+    const half_width: i64 = @intFromFloat(side_length / 2.0);
 
-    try rasterize(start.mul(tr), end.mul(tr), buffer, allocator);
-    //    try rasterize(start1.mul(tr), end1.mul(tr), buffer, allocator);
-    //    try rasterize(start2.mul(tr), end2.mul(tr), buffer, allocator);
-    //    try rasterize(start3.mul(tr), end3.mul(tr), buffer, allocator);
+    const start = Point{ .x = center_x, .y = center_y + half_height, .w = 1 };
+    const end = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
+
+    const start1 = Point{ .x = center_x - half_width, .y = center_y + half_height, .w = 1 };
+    const end1 = Point{ .x = center_x + half_width, .y = center_y + half_height, .w = 1 };
+
+    const start2 = Point{ .x = center_x - half_width, .y = center_y + half_height, .w = 1 };
+    const end2 = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
+
+    const start3 = Point{ .x = center_x + half_width, .y = center_y + half_height, .w = 1 };
+    const end3 = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
+
+    const translate_to_origin = translate(-center_x, -center_y);
+    const translate_back = translate(center_x, center_y);
+
+    const angle = to_rad(0.0);
+    const r = rotate(angle);
+    const s = scale(1.0, -1.0);
+
+    const trt = translate_to_origin.mul(r.mul(s.mul(translate_back)));
+
+    try rasterize(start.mul(trt), end.mul(trt), buffer, allocator);
+    try rasterize(start1.mul(trt), end1.mul(trt), buffer, allocator);
+    try rasterize(start2.mul(trt), end2.mul(trt), buffer, allocator);
+    try rasterize(start3.mul(trt), end3.mul(trt), buffer, allocator);
 
     try write_to_ppm(buffer);
 }
