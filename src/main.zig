@@ -6,7 +6,7 @@ const C_WIDTH: c_int = 640;
 const HEIGHT: usize = 480;
 const C_HEIGHT: c_int = 480;
 const CHANNELS: usize = 3;
-const size = CHANNELS * WIDTH * HEIGHT;
+const BUFFER_SIZE = CHANNELS * WIDTH * HEIGHT;
 const stdout = std.io.getStdOut();
 const write = stdout.writer();
 const math = std.math;
@@ -176,9 +176,48 @@ pub fn rasterize(start: Point, end: Point, buffer: []u8, allocator: Allocator) !
         x = if (point.x < 0) 0 else if (point.x >= WIDTH) WIDTH - 1 else @intCast(point.x);
         y = if (point.y < 0) 0 else if (point.y >= HEIGHT) HEIGHT - 1 else @intCast(point.y);
         index = (y * WIDTH + x) * CHANNELS;
-        buffer[index] = 0;
-        buffer[index + 1] = 128;
-        buffer[index + 2] = 255;
+        buffer[index] = 0; //B
+        buffer[index + 1] = 0; //G
+        buffer[index + 2] = 255; //R
+    }
+}
+pub fn triangle(side_length: u64, points: ArrayList(Point)) !void {
+    const center_x: i64 = @intCast(WIDTH / 2);
+    const center_y: i64 = @intCast(HEIGHT / 2);
+    const half_height: i64 = @intFromFloat(side_length * math.sqrt(3.0) / 2.0);
+    const half_width: i64 = @intFromFloat(side_length / 2.0);
+    const start1 = Point{ .x = center_x - half_width, .y = center_y + half_height, .w = 1 };
+    const end1 = Point{ .x = center_x + half_width, .y = center_y + half_height, .w = 1 };
+    const start2 = Point{ .x = center_x - half_width, .y = center_y + half_height, .w = 1 };
+    const end2 = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
+    const start3 = Point{ .x = center_x + half_width, .y = center_y + half_height, .w = 1 };
+    const end3 = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
+
+    points.append(start1);
+    points.append(end1);
+    points.append(start2);
+    points.append(end2);
+    points.append(start3);
+    points.append(end3);
+}
+pub fn rotate_triangle(angle: f64, points: ArrayList(Point), center_x: i64, center_y: i64) ArrayList(Point) {
+    const translate_to_origin = translate(-center_x, -center_y);
+    const translate_back = translate(center_x, center_y);
+    const theta = to_rad(angle);
+    const r = rotate(theta);
+    const trt = translate_to_origin.mul(r.mul(translate_back));
+    for (points) |point| {
+        point = point.mul(trt);
+    }
+    return points;
+}
+pub fn BresenhamLine(start: Point, end: Point, buffer:[]u8)!void{
+
+}
+pub fn rasterize_triangle(points: ArrayList(Point), buffer: []u8) !void {
+    var i:usize=0;
+    while(i+1<points.len) : (i+=2) {
+        try BresenhamLine(points[0],points[1],buffer);
     }
 }
 pub fn main() !void {
@@ -192,55 +231,42 @@ pub fn main() !void {
         c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
+    defer c.SDL_DestroyWindow(window);
 
     const renderer = c.SDL_CreateRenderer(window, -1, 0) orelse {
         c.SDL_Log("Unable to create renderer: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
     defer c.SDL_DestroyRenderer(renderer);
-
-    defer c.SDL_DestroyWindow(window);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const buffer = try allocator.alloc(u8, size);
+    const buffer = try allocator.alloc(u8, BUFFER_SIZE);
     defer allocator.free(buffer);
 
     try init_buffer(buffer);
     const side_length = 60;
 
-    const center_x: i64 = @intCast(WIDTH / 2);
-    const center_y: i64 = @intCast(HEIGHT / 2);
+    var points: ArrayList(Point) = triangle(side_length);
+    errdefer points.deinit();
 
-    const half_height: i64 = @intFromFloat(side_length * math.sqrt(3.0) / 2.0);
-    const half_width: i64 = @intFromFloat(side_length / 2.0);
+    rasterize_triangle(points, buffer);
 
-    const start = Point{ .x = center_x, .y = center_y + half_height, .w = 1 };
-    const end = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
+    const surface = c.SDL_CreateRGBSurfaceFrom(buffer.ptr, C_WIDTH, C_HEIGHT, 24, C_WIDTH * 3, // pitch
+        0xFF0000, // red mask
+        0x00FF00, // green mask
+        0x0000FF, // blue mask
+        0x000000 // alpha mask (none)
+    );
 
-    const start1 = Point{ .x = center_x - half_width, .y = center_y + half_height, .w = 1 };
-    const end1 = Point{ .x = center_x + half_width, .y = center_y + half_height, .w = 1 };
+    const texture = c.SDL_CreateTextureFromSurface(renderer, surface);
 
-    const start2 = Point{ .x = center_x - half_width, .y = center_y + half_height, .w = 1 };
-    const end2 = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
-
-    const start3 = Point{ .x = center_x + half_width, .y = center_y + half_height, .w = 1 };
-    const end3 = Point{ .x = center_x, .y = center_y - half_height, .w = 1 };
-
-    const translate_to_origin = translate(-center_x, -center_y);
-    const translate_back = translate(center_x, center_y);
-
-    const angle = to_rad(0.0);
-    const r = rotate(angle);
-    const s = scale(1.0, -1.0);
-
-    const trt = translate_to_origin.mul(r.mul(s.mul(translate_back)));
-
-    try rasterize(start.mul(trt), end.mul(trt), buffer, allocator);
-    try rasterize(start1.mul(trt), end1.mul(trt), buffer, allocator);
-    try rasterize(start2.mul(trt), end2.mul(trt), buffer, allocator);
-    try rasterize(start3.mul(trt), end3.mul(trt), buffer, allocator);
+    if (texture != null) {
+        _ = c.SDL_RenderClear(renderer);
+        _ = c.SDL_RenderCopy(renderer, texture, 0, 0);
+    }
+    defer c.SDL_DestroyTexture(texture);
 
     var quit: bool = false;
     while (!quit) {
@@ -251,7 +277,7 @@ pub fn main() !void {
                     const keycode = event.key.keysym.sym;
                     if (keycode == c.SDLK_ESCAPE) {
                         quit = true;
-                    }
+                    } else if (keycode == c.SDLK_KP_A) {}
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     if (event.button.button == c.SDL_BUTTON_LEFT) {
@@ -261,8 +287,11 @@ pub fn main() !void {
                 else => {},
             }
         }
+        _ = c.SDL_RenderClear(renderer);
+        _ = c.SDL_RenderCopy(renderer, texture, null, null);
+        _ = c.SDL_RenderPresent(renderer);
 
-        c.SDL_Delay(10);
+        c.SDL_Delay(16);
     }
     //    try write_to_ppm(buffer);
 }
