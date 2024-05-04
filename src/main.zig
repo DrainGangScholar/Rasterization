@@ -2,7 +2,9 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const WIDTH: usize = 640;
+const C_WIDTH: c_int = 640;
 const HEIGHT: usize = 480;
+const C_HEIGHT: c_int = 480;
 const CHANNELS: usize = 3;
 const size = CHANNELS * WIDTH * HEIGHT;
 const stdout = std.io.getStdOut();
@@ -11,9 +13,14 @@ const math = std.math;
 const PI = std.math.pi;
 const PI_OVER_180 = PI / 180.0;
 
+const c = @cImport({
+    @cInclude("SDL.h");
+});
+
 inline fn to_rad(angle: f64) f64 {
     return angle * PI_OVER_180;
 }
+const SDL_WINDOWPOS_UNDEFINED: c_int = @bitCast(c.SDL_WINDOWPOS_UNDEFINED_MASK);
 
 const Matrix = struct {
     buffer: [3][3]f64,
@@ -175,6 +182,17 @@ pub fn rasterize(start: Point, end: Point, buffer: []u8, allocator: Allocator) !
     }
 }
 pub fn main() !void {
+    if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
+        c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
+        return error.SDLInitializationFailed;
+    }
+    defer c.SDL_Quit();
+    const window = c.SDL_CreateWindow("Paint", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, C_WIDTH, C_HEIGHT, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE) orelse
+        {
+        c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
+        return error.SDLInitializationFailed;
+    };
+    defer c.SDL_DestroyWindow(window);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -217,5 +235,27 @@ pub fn main() !void {
     try rasterize(start2.mul(trt), end2.mul(trt), buffer, allocator);
     try rasterize(start3.mul(trt), end3.mul(trt), buffer, allocator);
 
-    try write_to_ppm(buffer);
+    var quit: bool = false;
+    while (!quit) {
+        var event: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&event) != 0) {
+            switch (event.type) {
+                c.SDL_KEYDOWN => {
+                    const keycode = event.key.keysym.sym;
+                    if (keycode == c.SDLK_ESCAPE) {
+                        quit = true;
+                    }
+                },
+                c.SDL_MOUSEBUTTONDOWN => {
+                    if (event.button.button == c.SDL_BUTTON_LEFT) {
+                        try write.print("MOUSE CLICK\n", .{});
+                    }
+                },
+                else => {},
+            }
+        }
+
+        c.SDL_Delay(10);
+    }
+    //    try write_to_ppm(buffer);
 }
