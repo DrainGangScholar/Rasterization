@@ -44,7 +44,7 @@
         //    .lazy = false,
         //},
     },
-
+    .zsdl = .{.path="./lib/zsdl"},
     // Specifies the set of files and directories that are included in this package.
     // Only files and directories listed here are included in the `hash` that
     // is computed for this package.
